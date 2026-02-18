@@ -151,7 +151,19 @@ const btnDanger = {
 
 const labelStyle = { display: "block", fontSize: 11, fontWeight: 600, color: "#8B949E", textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 6 };
 
+function useIsMobile(breakpoint = 768) {
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < breakpoint);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+    const handler = (e) => setIsMobile(e.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [breakpoint]);
+  return isMobile;
+}
+
 export default function GanttApp() {
+  const isMobile = useIsMobile();
   const [milestones, setMilestones] = useState(DEFAULT_MILESTONES);
   const [loaded, setLoaded] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
@@ -190,23 +202,25 @@ export default function GanttApp() {
     return a.date.localeCompare(b.date);
   });
 
-  // Drag logic
-  const handleMouseDown = useCallback((e, id) => {
+  // Drag logic (mouse + touch)
+  const getClientX = (e) => e.touches ? e.touches[0].clientX : e.clientX;
+
+  const handleDragStart = useCallback((e, id) => {
     e.preventDefault();
     const m = milestones.find((x) => x.id === id);
     if (!m) return;
     setDragId(id);
-    setDragStartX(e.clientX);
+    setDragStartX(getClientX(e));
     setDragOrigDate(m.date);
   }, [milestones]);
 
-  const handleMouseMove = useCallback((e) => {
+  const handleDragMove = useCallback((e) => {
     if (!dragId) return;
     const ref = chartRefs.current[dragId];
     if (!ref) return;
     const rect = ref.getBoundingClientRect();
     const chartWidth = rect.width;
-    const dx = e.clientX - dragStartX;
+    const dx = getClientX(e) - dragStartX;
     const daysDelta = Math.round((dx / chartWidth) * TOTAL_DAYS);
     const origDate = parseDate(dragOrigDate);
     const newDate = new Date(origDate.getTime() + daysDelta * 86400000);
@@ -215,21 +229,25 @@ export default function GanttApp() {
     }
   }, [dragId, dragStartX, dragOrigDate]);
 
-  const handleMouseUp = useCallback(() => {
+  const handleDragEnd = useCallback(() => {
     setDragId(null);
     setDragOrigDate(null);
   }, []);
 
   useEffect(() => {
     if (dragId) {
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseUp);
+      window.addEventListener("mousemove", handleDragMove);
+      window.addEventListener("mouseup", handleDragEnd);
+      window.addEventListener("touchmove", handleDragMove, { passive: false });
+      window.addEventListener("touchend", handleDragEnd);
       return () => {
-        window.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseup", handleMouseUp);
+        window.removeEventListener("mousemove", handleDragMove);
+        window.removeEventListener("mouseup", handleDragEnd);
+        window.removeEventListener("touchmove", handleDragMove);
+        window.removeEventListener("touchend", handleDragEnd);
       };
     }
-  }, [dragId, handleMouseMove, handleMouseUp]);
+  }, [dragId, handleDragMove, handleDragEnd]);
 
   // Add form
   const [addForm, setAddForm] = useState({ customer: "maniya", feature: "", date: "2026-03-01" });
@@ -269,163 +287,233 @@ export default function GanttApp() {
 
   const todayPct = pct(dayOffset(TODAY));
 
+  // Group milestones by customer for mobile view
+  const groupedByCustomer = CUSTOMERS.map((c) => ({
+    ...c,
+    items: sorted.filter((m) => m.customer === c.id),
+  })).filter((g) => g.items.length > 0);
+
   return (
-    <div style={{ background: "#0E1117", color: "#E6EDF3", fontFamily: "'DM Sans', sans-serif", minHeight: "100vh", padding: "20px 24px", userSelect: dragId ? "none" : "auto" }}>
+    <div style={{ background: "#0E1117", color: "#E6EDF3", fontFamily: "'DM Sans', sans-serif", minHeight: "100vh", padding: isMobile ? "16px 12px" : "20px 24px", userSelect: dragId ? "none" : "auto" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
 
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14, flexWrap: "wrap", gap: 12 }}>
         <div>
-          <h1 style={{ fontSize: 20, fontWeight: 700, letterSpacing: -0.5, margin: 0 }}>Feature Launch Schedule</h1>
+          <h1 style={{ fontSize: isMobile ? 18 : 20, fontWeight: 700, letterSpacing: -0.5, margin: 0 }}>Feature Launch Schedule</h1>
           <p style={{ color: "#8B949E", fontSize: 12, fontFamily: "'DM Mono', monospace", margin: "4px 0 0" }}>Avico Health AI · Feb – May 2026</p>
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={() => setAddOpen(true)} style={btnPrimary}>+ Add Milestone</button>
+          <button onClick={() => setAddOpen(true)} style={btnPrimary}>{isMobile ? "+" : "+ Add Milestone"}</button>
           <button onClick={handleReset} style={btnSecondary}>Reset</button>
         </div>
       </div>
 
       {/* Legend */}
-      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 14 }}>
+      <div style={{ display: "flex", gap: isMobile ? 10 : 16, flexWrap: "wrap", marginBottom: 14 }}>
         {CUSTOMERS.map((c) => (
           <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 500 }}>
             <div style={{ width: 8, height: 8, borderRadius: 3, background: c.color, flexShrink: 0 }} />
             <span>{c.name}</span>
           </div>
         ))}
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 500, marginLeft: 8, color: "#8B949E" }}>
-          <span style={{ fontSize: 11 }}>⟵ drag bars to reschedule · click to edit ⟶</span>
-        </div>
+        {!isMobile && (
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 500, marginLeft: 8, color: "#8B949E" }}>
+            <span style={{ fontSize: 11 }}>⟵ drag bars to reschedule · click to edit ⟶</span>
+          </div>
+        )}
       </div>
 
-      {/* Gantt */}
-      <div style={{ background: "#161B22", border: "1px solid #2A3140", borderRadius: 12, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minWidth: 800 }}>
-          {/* Month header */}
-          <div style={{ padding: "10px 16px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.2, color: "#8B949E", borderBottom: "1px solid #2A3140", borderRight: "1px solid #2A3140", background: "#161B22", position: "sticky", top: 0, zIndex: 20 }}>
-            Feature
-          </div>
-          <div style={{ borderBottom: "1px solid #2A3140", background: "#161B22", display: "flex", position: "sticky", top: 0, zIndex: 20 }}>
-            {MONTHS.map((m, i) => {
-              const mStart = m.start < START ? START : m.start;
-              const mEnd = m.end > END ? END : m.end;
-              const mDays = Math.round((mEnd - mStart) / 86400000) + 1;
-              return (
-                <div key={i} style={{ flex: mDays, textAlign: "center", padding: "10px 0", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.2, color: "#8B949E", borderRight: i < MONTHS.length - 1 ? "1px solid #2A3140" : "none" }}>
-                  {m.name}
+      {isMobile ? (
+        /* ── Mobile: Card list grouped by customer ── */
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {groupedByCustomer.map((group) => (
+            <div key={group.id} style={{ background: "#161B22", border: "1px solid #2A3140", borderRadius: 12, overflow: "hidden" }}>
+              {/* Customer header */}
+              <div style={{ padding: "10px 14px", borderBottom: "1px solid #2A3140", display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ width: 10, height: 10, borderRadius: 4, background: group.color, flexShrink: 0 }} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: group.color }}>{group.name}</span>
+                <span style={{ fontSize: 11, color: "#8B949E", fontFamily: "'DM Mono', monospace", marginLeft: "auto" }}>{group.items.length}</span>
+              </div>
+              {/* Milestone cards */}
+              {group.items.map((m, idx) => {
+                const d = parseDate(m.date);
+                const isPast = d < TODAY;
+                const isClose = !isPast && dayOffset(d) - dayOffset(TODAY) <= 7;
+                return (
+                  <div
+                    key={m.id}
+                    onClick={() => setEditId(m.id)}
+                    style={{
+                      padding: "12px 14px",
+                      borderBottom: idx < group.items.length - 1 ? "1px solid #2A3140" : "none",
+                      cursor: "pointer",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                      background: "transparent",
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, marginBottom: 4 }}>{m.feature}</div>
+                      {/* Mini timeline bar */}
+                      <div style={{ position: "relative", height: 4, background: "#2A3140", borderRadius: 2, overflow: "hidden" }}>
+                        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, Math.max(0, pct(dayOffset(d))))}%`, background: group.color, borderRadius: 2, opacity: 0.5 }} />
+                        <div style={{ position: "absolute", left: `${todayPct}%`, top: 0, bottom: 0, width: 2, background: "#F85149" }} />
+                      </div>
+                    </div>
+                    <div style={{ textAlign: "right", flexShrink: 0 }}>
+                      <div style={{
+                        fontSize: 13,
+                        fontWeight: 600,
+                        fontFamily: "'DM Mono', monospace",
+                        color: isPast ? "#8B949E" : isClose ? "#FFA657" : "#E6EDF3",
+                      }}>
+                        {shortDate(m.date)}
+                      </div>
+                      <div style={{ fontSize: 10, color: "#8B949E", fontFamily: "'DM Mono', monospace", marginTop: 2 }}>
+                        {isPast ? "past" : `${dayOffset(d) - dayOffset(TODAY)}d`}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      ) : (
+        /* ── Desktop: Gantt chart ── */
+        <div style={{ background: "#161B22", border: "1px solid #2A3140", borderRadius: 12, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minWidth: 800 }}>
+            {/* Month header */}
+            <div style={{ padding: "10px 16px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.2, color: "#8B949E", borderBottom: "1px solid #2A3140", borderRight: "1px solid #2A3140", background: "#161B22", position: "sticky", top: 0, zIndex: 20 }}>
+              Feature
+            </div>
+            <div style={{ borderBottom: "1px solid #2A3140", background: "#161B22", display: "flex", position: "sticky", top: 0, zIndex: 20 }}>
+              {MONTHS.map((m, i) => {
+                const mStart = m.start < START ? START : m.start;
+                const mEnd = m.end > END ? END : m.end;
+                const mDays = Math.round((mEnd - mStart) / 86400000) + 1;
+                return (
+                  <div key={i} style={{ flex: mDays, textAlign: "center", padding: "10px 0", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.2, color: "#8B949E", borderRight: i < MONTHS.length - 1 ? "1px solid #2A3140" : "none" }}>
+                    {m.name}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Week sub-header */}
+            <div style={{ borderBottom: "1px solid #2A3140", borderRight: "1px solid #2A3140", background: "#161B22", position: "sticky", top: 37, zIndex: 20 }} />
+            <div style={{ borderBottom: "1px solid #2A3140", display: "flex", background: "#161B22", position: "sticky", top: 37, zIndex: 20 }}>
+              {WEEKS.map((w, i) => (
+                <div key={i} style={{ flex: 1, textAlign: "center", padding: "3px 0", fontSize: 9, fontFamily: "'DM Mono', monospace", color: "#8B949E", borderRight: i < WEEKS.length - 1 ? "1px solid rgba(42,49,64,0.5)" : "none", opacity: 0.7 }}>
+                  {w.getMonth() + 1}/{w.getDate()}
                 </div>
-              );
+              ))}
+            </div>
+
+            {/* Rows */}
+            {sorted.map((m, idx) => {
+              const c = CUSTOMER_MAP[m.customer];
+              const d = parseDate(m.date);
+              const off = dayOffset(d);
+              const leftPct = pct(off);
+              const isHover = hoverId === m.id;
+              const isDrag = dragId === m.id;
+
+              return [
+                // Label
+                <div
+                  key={`label-${m.id}`}
+                  onClick={() => setEditId(m.id)}
+                  style={{
+                    padding: "5px 14px",
+                    borderBottom: idx < sorted.length - 1 ? "1px solid #2A3140" : "none",
+                    borderRight: "1px solid #2A3140",
+                    display: "flex",
+                    flexDirection: "column",
+                    justifyContent: "center",
+                    minHeight: 36,
+                    cursor: "pointer",
+                    background: isHover ? "rgba(255,255,255,0.03)" : idx % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent",
+                    transition: "background 0.15s",
+                  }}
+                  onMouseEnter={() => setHoverId(m.id)}
+                  onMouseLeave={() => setHoverId(null)}
+                >
+                  <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: c?.color || "#8B949E", marginBottom: 1 }}>
+                    {c?.name || m.customer}
+                  </div>
+                  <div style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.3 }}>{m.feature}</div>
+                </div>,
+                // Chart
+                <div
+                  key={`chart-${m.id}`}
+                  ref={(el) => (chartRefs.current[m.id] = el)}
+                  style={{
+                    borderBottom: idx < sorted.length - 1 ? "1px solid #2A3140" : "none",
+                    position: "relative",
+                    minHeight: 36,
+                    background: isHover ? "rgba(255,255,255,0.02)" : idx % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent",
+                    transition: "background 0.15s",
+                  }}
+                  onMouseEnter={() => setHoverId(m.id)}
+                  onMouseLeave={() => setHoverId(null)}
+                >
+                  {/* Week grid lines */}
+                  {WEEKS.map((w, i) => (
+                    <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${pct(dayOffset(w))}%`, width: 1, background: "rgba(42,49,64,0.4)" }} />
+                  ))}
+                  {/* Today line */}
+                  <div style={{ position: "absolute", top: 0, bottom: 0, left: `${todayPct}%`, width: 2, background: "#F85149", zIndex: 5, opacity: 0.6 }}>
+                    {idx === 0 && (
+                      <div style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontSize: 8, fontFamily: "'DM Mono', monospace", color: "#F85149", whiteSpace: "nowrap", fontWeight: 500 }}>
+                        TODAY
+                      </div>
+                    )}
+                  </div>
+                  {/* Bar */}
+                  <div
+                    onMouseDown={(e) => handleDragStart(e, m.id)}
+                    onTouchStart={(e) => handleDragStart(e, m.id)}
+                    onClick={(e) => { if (!dragOrigDate) setEditId(m.id); }}
+                    style={{
+                      position: "absolute",
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      left: `${leftPct}%`,
+                      minWidth: 42,
+                      width: `${Math.max(pct(3), 2.5)}%`,
+                      height: 22,
+                      borderRadius: 5,
+                      background: c?.color || "#888",
+                      color: "#0E1117",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: 10,
+                      fontWeight: 600,
+                      fontFamily: "'DM Mono', monospace",
+                      cursor: isDrag ? "grabbing" : "grab",
+                      zIndex: isDrag ? 15 : 2,
+                      boxShadow: isDrag ? `0 0 16px ${c?.color}44` : isHover ? `0 0 12px ${c?.color}33` : "none",
+                      transition: isDrag ? "none" : "box-shadow 0.2s",
+                      whiteSpace: "nowrap",
+                      touchAction: "none",
+                    }}
+                  >
+                    {shortDate(m.date)}
+                  </div>
+                </div>,
+              ];
             })}
           </div>
-
-          {/* Week sub-header */}
-          <div style={{ borderBottom: "1px solid #2A3140", borderRight: "1px solid #2A3140", background: "#161B22", position: "sticky", top: 37, zIndex: 20 }} />
-          <div style={{ borderBottom: "1px solid #2A3140", display: "flex", background: "#161B22", position: "sticky", top: 37, zIndex: 20 }}>
-            {WEEKS.map((w, i) => (
-              <div key={i} style={{ flex: 1, textAlign: "center", padding: "3px 0", fontSize: 9, fontFamily: "'DM Mono', monospace", color: "#8B949E", borderRight: i < WEEKS.length - 1 ? "1px solid rgba(42,49,64,0.5)" : "none", opacity: 0.7 }}>
-                {w.getMonth() + 1}/{w.getDate()}
-              </div>
-            ))}
-          </div>
-
-          {/* Rows */}
-          {sorted.map((m, idx) => {
-            const c = CUSTOMER_MAP[m.customer];
-            const d = parseDate(m.date);
-            const off = dayOffset(d);
-            const leftPct = pct(off);
-            const isHover = hoverId === m.id;
-            const isDrag = dragId === m.id;
-
-            return [
-              // Label
-              <div
-                key={`label-${m.id}`}
-                onClick={() => setEditId(m.id)}
-                style={{
-                  padding: "5px 14px",
-                  borderBottom: idx < sorted.length - 1 ? "1px solid #2A3140" : "none",
-                  borderRight: "1px solid #2A3140",
-                  display: "flex",
-                  flexDirection: "column",
-                  justifyContent: "center",
-                  minHeight: 36,
-                  cursor: "pointer",
-                  background: isHover ? "rgba(255,255,255,0.03)" : idx % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent",
-                  transition: "background 0.15s",
-                }}
-                onMouseEnter={() => setHoverId(m.id)}
-                onMouseLeave={() => setHoverId(null)}
-              >
-                <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: c?.color || "#8B949E", marginBottom: 1 }}>
-                  {c?.name || m.customer}
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.3 }}>{m.feature}</div>
-              </div>,
-              // Chart
-              <div
-                key={`chart-${m.id}`}
-                ref={(el) => (chartRefs.current[m.id] = el)}
-                style={{
-                  borderBottom: idx < sorted.length - 1 ? "1px solid #2A3140" : "none",
-                  position: "relative",
-                  minHeight: 36,
-                  background: isHover ? "rgba(255,255,255,0.02)" : idx % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent",
-                  transition: "background 0.15s",
-                }}
-                onMouseEnter={() => setHoverId(m.id)}
-                onMouseLeave={() => setHoverId(null)}
-              >
-                {/* Week grid lines */}
-                {WEEKS.map((w, i) => (
-                  <div key={i} style={{ position: "absolute", top: 0, bottom: 0, left: `${pct(dayOffset(w))}%`, width: 1, background: "rgba(42,49,64,0.4)" }} />
-                ))}
-                {/* Today line */}
-                <div style={{ position: "absolute", top: 0, bottom: 0, left: `${todayPct}%`, width: 2, background: "#F85149", zIndex: 5, opacity: 0.6 }}>
-                  {idx === 0 && (
-                    <div style={{ position: "absolute", top: -16, left: "50%", transform: "translateX(-50%)", fontSize: 8, fontFamily: "'DM Mono', monospace", color: "#F85149", whiteSpace: "nowrap", fontWeight: 500 }}>
-                      TODAY
-                    </div>
-                  )}
-                </div>
-                {/* Bar */}
-                <div
-                  onMouseDown={(e) => handleMouseDown(e, m.id)}
-                  onClick={(e) => { if (!dragOrigDate) setEditId(m.id); }}
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    left: `${leftPct}%`,
-                    minWidth: 42,
-                    width: `${Math.max(pct(3), 2.5)}%`,
-                    height: 22,
-                    borderRadius: 5,
-                    background: c?.color || "#888",
-                    color: "#0E1117",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    fontSize: 10,
-                    fontWeight: 600,
-                    fontFamily: "'DM Mono', monospace",
-                    cursor: isDrag ? "grabbing" : "grab",
-                    zIndex: isDrag ? 15 : 2,
-                    boxShadow: isDrag ? `0 0 16px ${c?.color}44` : isHover ? `0 0 12px ${c?.color}33` : "none",
-                    transition: isDrag ? "none" : "box-shadow 0.2s",
-                    whiteSpace: "nowrap",
-                  }}
-                >
-                  {shortDate(m.date)}
-                </div>
-              </div>,
-            ];
-          })}
         </div>
-      </div>
+      )}
 
       <div style={{ marginTop: 12, textAlign: "center", color: "#8B949E", fontSize: 11, fontFamily: "'DM Mono', monospace" }}>
-        {milestones.length} milestones · Feb 16 – May 24, 2026
+        {milestones.length} milestones · Feb 16 – May 24, 2026{isMobile && " · tap to edit"}
       </div>
 
       {/* Add Modal */}
