@@ -287,12 +287,6 @@ export default function GanttApp() {
 
   const todayPct = pct(dayOffset(TODAY));
 
-  // Group milestones by customer for mobile view
-  const groupedByCustomer = CUSTOMERS.map((c) => ({
-    ...c,
-    items: sorted.filter((m) => m.customer === c.id),
-  })).filter((g) => g.items.length > 0);
-
   return (
     <div style={{ background: "#0E1117", color: "#E6EDF3", fontFamily: "'DM Sans', sans-serif", minHeight: "100vh", padding: isMobile ? "16px 12px" : "20px 24px", userSelect: dragId ? "none" : "auto" }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -324,68 +318,9 @@ export default function GanttApp() {
         )}
       </div>
 
-      {isMobile ? (
-        /* ── Mobile: Card list grouped by customer ── */
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          {groupedByCustomer.map((group) => (
-            <div key={group.id} style={{ background: "#161B22", border: "1px solid #2A3140", borderRadius: 12, overflow: "hidden" }}>
-              {/* Customer header */}
-              <div style={{ padding: "10px 14px", borderBottom: "1px solid #2A3140", display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={{ width: 10, height: 10, borderRadius: 4, background: group.color, flexShrink: 0 }} />
-                <span style={{ fontSize: 13, fontWeight: 600, color: group.color }}>{group.name}</span>
-                <span style={{ fontSize: 11, color: "#8B949E", fontFamily: "'DM Mono', monospace", marginLeft: "auto" }}>{group.items.length}</span>
-              </div>
-              {/* Milestone cards */}
-              {group.items.map((m, idx) => {
-                const d = parseDate(m.date);
-                const isPast = d < TODAY;
-                const isClose = !isPast && dayOffset(d) - dayOffset(TODAY) <= 7;
-                return (
-                  <div
-                    key={m.id}
-                    onClick={() => setEditId(m.id)}
-                    style={{
-                      padding: "12px 14px",
-                      borderBottom: idx < group.items.length - 1 ? "1px solid #2A3140" : "none",
-                      cursor: "pointer",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 12,
-                      background: "transparent",
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, lineHeight: 1.4, marginBottom: 4 }}>{m.feature}</div>
-                      {/* Mini timeline bar */}
-                      <div style={{ position: "relative", height: 4, background: "#2A3140", borderRadius: 2, overflow: "hidden" }}>
-                        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, Math.max(0, pct(dayOffset(d))))}%`, background: group.color, borderRadius: 2, opacity: 0.5 }} />
-                        <div style={{ position: "absolute", left: `${todayPct}%`, top: 0, bottom: 0, width: 2, background: "#F85149" }} />
-                      </div>
-                    </div>
-                    <div style={{ textAlign: "right", flexShrink: 0 }}>
-                      <div style={{
-                        fontSize: 13,
-                        fontWeight: 600,
-                        fontFamily: "'DM Mono', monospace",
-                        color: isPast ? "#8B949E" : isClose ? "#FFA657" : "#E6EDF3",
-                      }}>
-                        {shortDate(m.date)}
-                      </div>
-                      <div style={{ fontSize: 10, color: "#8B949E", fontFamily: "'DM Mono', monospace", marginTop: 2 }}>
-                        {isPast ? "past" : `${dayOffset(d) - dayOffset(TODAY)}d`}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))}
-        </div>
-      ) : (
-        /* ── Desktop: Gantt chart ── */
-        <div style={{ background: "#161B22", border: "1px solid #2A3140", borderRadius: 12, overflow: "hidden" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "220px 1fr", minWidth: 800 }}>
+      {/* Gantt */}
+      <div style={{ background: "#161B22", border: "1px solid #2A3140", borderRadius: 12, overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "150px 1fr" : "220px 1fr", minWidth: 700 }}>
             {/* Month header */}
             <div style={{ padding: "10px 16px", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.2, color: "#8B949E", borderBottom: "1px solid #2A3140", borderRight: "1px solid #2A3140", background: "#161B22", position: "sticky", top: 0, zIndex: 20 }}>
               Feature
@@ -428,7 +363,7 @@ export default function GanttApp() {
                   key={`label-${m.id}`}
                   onClick={() => setEditId(m.id)}
                   style={{
-                    padding: "5px 14px",
+                    padding: isMobile ? "4px 8px" : "5px 14px",
                     borderBottom: idx < sorted.length - 1 ? "1px solid #2A3140" : "none",
                     borderRight: "1px solid #2A3140",
                     display: "flex",
@@ -442,10 +377,10 @@ export default function GanttApp() {
                   onMouseEnter={() => setHoverId(m.id)}
                   onMouseLeave={() => setHoverId(null)}
                 >
-                  <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1, color: c?.color || "#8B949E", marginBottom: 1 }}>
+                  <div style={{ fontSize: isMobile ? 8 : 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: isMobile ? 0.5 : 1, color: c?.color || "#8B949E", marginBottom: 1 }}>
                     {c?.name || m.customer}
                   </div>
-                  <div style={{ fontSize: 12, fontWeight: 500, lineHeight: 1.3 }}>{m.feature}</div>
+                  <div style={{ fontSize: isMobile ? 10 : 12, fontWeight: 500, lineHeight: 1.3 }}>{m.feature}</div>
                 </div>,
                 // Chart
                 <div
@@ -508,12 +443,11 @@ export default function GanttApp() {
                 </div>,
               ];
             })}
-          </div>
         </div>
-      )}
+      </div>
 
       <div style={{ marginTop: 12, textAlign: "center", color: "#8B949E", fontSize: 11, fontFamily: "'DM Mono', monospace" }}>
-        {milestones.length} milestones · Feb 16 – May 24, 2026{isMobile && " · tap to edit"}
+        {milestones.length} milestones · Feb 16 – May 24, 2026{isMobile && " · swipe to scroll"}
       </div>
 
       {/* Add Modal */}
